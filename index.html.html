@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Motorsport visualiser</title>
+<link rel="icon" href="favicon.ico">
+<style>
+    :root{
+        --bg:#0f1724; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8; --glass: rgba(255,255,255,0.04);
+    }
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;color:#e6eef8;background:linear-gradient(180deg,#041025 0%, #081426 60%);-webkit-font-smoothing:antialiased}
+    header{display:flex;gap:12px;align-items:center;padding:12px;position:sticky;top:0;background:linear-gradient(90deg, rgba(6,22,33,0.6), rgba(4,8,15,0.4));backdrop-filter: blur(6px);z-index:40;border-bottom:1px solid rgba(255,255,255,0.04)}
+    .brand{font-weight:700;color:var(--accent);font-size:16px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .controls input[type=url]{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:var(--glass);color:#dbeafe;min-width:220px}
+    .btn{padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));color:var(--accent);cursor:pointer}
+    .btn.ghost{background:transparent;color:var(--muted);border:1px dashed rgba(255,255,255,0.03)}
+    main{height:calc(100vh - 64px);display:flex;flex-direction:column;gap:8px;padding:10px}
+    /* Layout area */
+    .viewer-wrap{flex:1;display:flex;gap:8px;min-height:200px}
+    .panel{background:var(--card);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:120px;min-height:120px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    .frame-header{display:flex;align-items:center;justify-content:space-between;padding:8px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));border-bottom:1px solid rgba(255,255,255,0.02);gap:8px}
+    .frame-header .title{font-size:13px;color:#cfeefc}
+    .frame{flex:1;border:0;width:100%}
+    /* Splitter */
+    .splitter{background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));width:10px;cursor:col-resize;border-radius:6px;align-self:stretch;flex-shrink:0}
+    .splitter.h{height:10px;width:100%;cursor:row-resize;border-radius:6px}
+    /* Right side: weather + classement */
+    .side{width:320px;min-width:220px;max-width:420px;display:flex;flex-direction:column;gap:8px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:10px;color:#dbeafe;border:1px solid rgba(255,255,255,0.03)}
+    .weather .row{display:flex;gap:12px;align-items:center}
+    .temp{font-size:28px;font-weight:700;color:var(--accent)}
+    .muted{color:var(--muted);font-size:13px}
+    .ranking-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+    .rank-item{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02)}
+    .rank-controls button{margin-left:6px}
+    /* Responsive */
+    @media (max-width:1000px){
+        .viewer-wrap{flex-direction:column}
+        .side{width:100%;max-width:none;min-width:0}
+        .splitter{display:none}
+    }
+    footer{padding:8px;color:var(--muted);font-size:13px;text-align:center}
+    small.info{color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+    <div class="brand">Visualiseur Motorsport</div>
+    <div class="controls" style="margin-left:8px;">
+        <input id="url1" type="url" placeholder="URL site 1 (ex: https://example.com)" />
+        <input id="url2" type="url" placeholder="URL site 2 (ex: https://example.com)" />
+        <button id="loadBtn" class="btn">Charger</button>
+        <button id="toggleView" class="btn ghost">Afficher 2 vues</button>
+        <button id="orientation" class="btn ghost">Side / Stack</button>
+        <span class="info">Les iframes sont sandboxées pour sécurité</span>
+    </div>
+</header>
+
+<main>
+    <div style="display:flex;gap:8px;align-items:stretch;flex:1;min-height:0">
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px;min-height:0">
+            <div id="viewer" class="viewer-wrap" style="min-height:0">
+                <!-- Panel 1 -->
+                <div class="panel" id="panel1" style="flex-basis:60%;">
+                    <div class="frame-header">
+                        <div class="title">Vue 1</div>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <small id="origin1" class="muted"></small>
+                            <button id="open1" title="Ouvrir dans un nouvel onglet" class="btn ghost">Ouvrir</button>
+                        </div>
+                    </div>
+                    <iframe id="iframe1" class="frame" src="about:blank" sandbox="allow-forms allow-scripts allow-same-origin allow-popups"></iframe>
+                </div>
+
+                <div id="split" class="splitter" title="Redimensionner"></div>
+
+                <!-- Panel 2 -->
+                <div class="panel" id="panel2" style="flex-basis:40%;">
+                    <div class="frame-header">
+                        <div class="title">Vue 2</div>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <small id="origin2" class="muted"></small>
+                            <button id="open2" title="Ouvrir dans un nouvel onglet" class="btn ghost">Ouvrir</button>
+                        </div>
+                    </div>
+                    <iframe id="iframe2" class="frame" src="about:blank" sandbox="allow-forms allow-scripts allow-same-origin allow-popups"></iframe>
+                </div>
+            </div>
+
+            <!-- Mobile hint / resizing note -->
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <strong>Astuce:</strong> Faites glisser la barre entre les vues pour ajuster les tailles. Sur petit écran, les vues passent en empilement vertical.
+                    </div>
+                    <div class="muted">Max 2 affichages</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: weather + classement -->
+        <aside class="side">
+            <div class="card weather" id="weatherCard">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <div style="font-weight:700">Météo locale</div>
+                        <div id="locName" class="muted">Chargement...</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div id="temp" class="temp">-- °C</div>
+                        <div id="cond" class="muted">--</div>
+                    </div>
+                </div>
+                <div style="margin-top:8px" class="muted">Dernière mise à jour : <span id="wUpdated">--</span></div>
+                <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+                    <button id="refreshWeather" class="btn">Rafraîchir</button>
+                    <button id="geoBtn" class="btn ghost">Utiliser ma position</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div style="font-weight:700">Classement / Pilotes</div>
+                    <div class="muted">Local (sauvegarde navigateur)</div>
+                </div>
+
+                <form id="rankForm" style="margin-top:8px;display:flex;gap:8px">
+                    <input id="rname" placeholder="Nom pilote/équipe" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:#e6eef8" required/>
+                    <button class="btn" type="submit">Ajouter</button>
+                </form>
+
+                <div class="ranking-list" id="ranking"></div>
+
+                <div style="display:flex;gap:8px;margin-top:8px">
+                    <button id="exportBtn" class="btn ghost">Exporter JSON</button>
+                    <button id="clearBtn" class="btn ghost">Tout effacer</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <footer>
+        <small class="muted">Conçu pour visualiser jusqu'à 2 sites en parallèle. Les iframes sont sandboxées — certaines pages peuvent restreindre l'affichage.</small>
+    </footer>
+</main>
+
+<script>
+/* GitHub Copilot - code de la page (français) */
+
+/* Éléments */
+const url1 = document.getElementById('url1');
+const url2 = document.getElementById('url2');
+const loadBtn = document.getElementById('loadBtn');
+const toggleView = document.getElementById('toggleView');
+const orientationBtn = document.getElementById('orientation');
+const viewer = document.getElementById('viewer');
+const panel1 = document.getElementById('panel1');
+const panel2 = document.getElementById('panel2');
+const iframe1 = document.getElementById('iframe1');
+const iframe2 = document.getElementById('iframe2');
+const split = document.getElementById('split');
+const origin1 = document.getElementById('origin1');
+const origin2 = document.getElementById('origin2');
+const open1 = document.getElementById('open1');
+const open2 = document.getElementById('open2');
+
+/* Weather */
+const refreshWeather = document.getElementById('refreshWeather');
+const geoBtn = document.getElementById('geoBtn');
+const locName = document.getElementById('locName');
+const tempEl = document.getElementById('temp');
+const condEl = document.getElementById('cond');
+const wUpdated = document.getElementById('wUpdated');
+
+/* Ranking */
+const rankForm = document.getElementById('rankForm');
+const rname = document.getElementById('rname');
+const ranking = document.getElementById('ranking');
+const exportBtn = document.getElementById('exportBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+let twoViews = true;
+let isSide = true; // side-by-side or stacked
+
+/* Charger les URLs dans iframes (sécurité: noopener si ouvert) */
+function setUrl(iframe, url, originLabel){
+    if(!url) return;
+    try {
+        // si l'utilisateur a omis le protocole, ajouter https
+        if(!/^https?:\/\//i.test(url)) url = 'https://' + url;
+        iframe.src = url;
+        originLabel.textContent = (new URL(url)).hostname;
+    } catch(e){
+        originLabel.textContent = 'URL invalide';
+    }
+}
+
+/* Boutons d'ouverture */
+open1.addEventListener('click', ()=>{ if(iframe1.src && iframe1.src !== 'about:blank') window.open(iframe1.src,'_blank','noopener');});
+open2.addEventListener('click', ()=>{ if(iframe2.src && iframe2.src !== 'about:blank') window.open(iframe2.src,'_blank','noopener');});
+
+/* Charger */
+loadBtn.addEventListener('click', ()=>{
+    setUrl(iframe1, url1.value.trim(), origin1);
+    setUrl(iframe2, url2.value.trim(), origin2);
+});
+
+/* Toggle affichage 1 ou 2 vues */
+toggleView.addEventListener('click', ()=>{
+    twoViews = !twoViews;
+    toggleView.textContent = twoViews ? 'Afficher 2 vues' : 'Afficher 1 vue';
+    panel2.style.display = twoViews ? 'flex' : 'none';
+    split.style.display = twoViews && isSide ? 'block' : 'none';
+});
+
+/* Orientation side / stack */
+orientationBtn.addEventListener('click', ()=>{
+    isSide = !isSide;
+    orientationBtn.textContent = isSide ? 'Side / Stack' : 'Stack / Side';
+    if(window.innerWidth <= 1000) {
+        // mobile -> always stacked by CSS
+        viewer.style.flexDirection = 'column';
+    } else {
+        viewer.style.flexDirection = isSide ? 'row' : 'column';
+    }
+    // ajuster splitter visiblité
+    split.className = isSide ? 'splitter' : 'splitter h';
+    split.style.display = (twoViews ? 'block' : 'none');
+});
+
+/* Redimensionnement par glisser (splitter) */
+let dragging = false;
+let startPos = 0;
+let startPct = 0;
+
+split.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    split.setPointerCapture(e.pointerId);
+    startPos = isSide ? e.clientX : e.clientY;
+    const rect1 = panel1.getBoundingClientRect();
+    const rectTot = viewer.getBoundingClientRect();
+    startPct = isSide ? rect1.width / rectTot.width : rect1.height / rectTot.height;
+});
+
+split.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const rectTot = viewer.getBoundingClientRect();
+    const pos = isSide ? e.clientX : e.clientY;
+    const delta = pos - startPos;
+    const size = isSide ? rectTot.width : rectTot.height;
+    let newPct = startPct + delta / size;
+    newPct = Math.max(0.15, Math.min(0.85, newPct)); // limites
+    if(isSide){
+        panel1.style.flexBasis = (newPct*100) + '%';
+        panel2.style.flexBasis = ((1-newPct)*100) + '%';
+    } else {
+        panel1.style.flexBasis = (newPct*100) + '%';
+        panel2.style.flexBasis = ((1-newPct)*100) + '%';
+    }
+});
+
+split.addEventListener('pointerup', (e)=>{
+    dragging = false;
+    split.releasePointerCapture(e.pointerId);
+});
+
+/* Cacher splitter sur petits écrans */
+function responsiveCheck(){
+    if(window.innerWidth <= 1000){
+        viewer.style.flexDirection = 'column';
+        split.style.display = 'none';
+    } else {
+        viewer.style.flexDirection = isSide ? 'row' : 'column';
+        split.style.display = twoViews ? 'block' : 'none';
+    }
+}
+window.addEventListener('resize', responsiveCheck);
+responsiveCheck();
+
+/* --- Météo: Open-Meteo API (sans clé) --- */
+async function fetchWeather(lat, lon){
+    try{
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&timezone=auto`);
+        const data = await res.json();
+        if(data && data.current_weather){
+            const cw = data.current_weather;
+            tempEl.textContent = Math.round(cw.temperature) + ' °C';
+            condEl.textContent = 'Vitesse vent ' + cw.windspeed + ' km/h, dir ' + cw.winddirection + '°';
+            locName.textContent = (data.timezone || `${lat.toFixed(2)},${lon.toFixed(2)}`);
+            wUpdated.textContent = new Date().toLocaleTimeString();
+        } else {
+            locName.textContent = 'Aucune donnée';
+        }
+    }catch(e){
+        locName.textContent = 'Erreur météo';
+        tempEl.textContent = '-- °C';
+        condEl.textContent = '';
+    }
+}
+
+/* Utiliser géolocalisation */
+async function useGeolocation(){
+    if(!navigator.geolocation) {
+        locName.textContent = 'Géolocalisation non disponible';
+        return;
+    }
+    locName.textContent = 'Récupération position...';
+    navigator.geolocation.getCurrentPosition((pos)=>{
+        const {latitude, longitude} = pos.coords;
+        fetchWeather(latitude, longitude);
+    }, (err)=>{
+        locName.textContent = 'Autorisation refusée';
+    }, {timeout:10000});
+}
+
+refreshWeather.addEventListener('click', ()=>{
+    // si location connue dans page, essayer navigator
+    useGeolocation();
+});
+geoBtn.addEventListener('click', useGeolocation);
+
+/* Chargement initial météo approximative via IP (fallback) */
+async function initWeatherByIP(){
+    try{
+        // ipinfo for approximate lat/lon (no key) - use freegeoip.app or ipapi.co
+        const r = await fetch('https://ipapi.co/json/');
+        const ipdata = await r.json();
+        if(ipdata && ipdata.latitude && ipdata.longitude){
+            fetchWeather(ipdata.latitude, ipdata.longitude);
+            locName.textContent = ipdata.city ? ipdata.city + ' - ' + ipdata.region : locName.textContent;
+            return;
+        }
+    }catch(e){}
+    locName.textContent = 'Position inconnue';
+}
+initWeatherByIP();
+
+/* --- Classement local (localStorage) --- */
+const STORAGE_KEY = 'motorsport_ranking_v1';
+function loadRanking(){
+    try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+    }catch(e){ return []; }
+}
+function saveRanking(list){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+function renderRanking(){
+    const list = loadRanking();
+    ranking.innerHTML = '';
+    list.forEach((name, i)=>{
+        const div = document.createElement('div');
+        div.className = 'rank-item';
+        div.innerHTML = `
+            <div style="display:flex;gap:8px;align-items:center">
+                <div style="font-weight:700">#${i+1}</div>
+                <div>${escapeHtml(name)}</div>
+            </div>
+            <div class="rank-controls">
+                <button class="btn ghost" data-action="up" data-index="${i}">↑</button>
+                <button class="btn ghost" data-action="down" data-index="${i}">↓</button>
+                <button class="btn ghost" data-action="del" data-index="${i}">✖</button>
+            </div>
+        `;
+        ranking.appendChild(div);
+    });
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+rankForm.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const name = rname.value.trim();
+    if(!name) return;
+    const list = loadRanking();
+    list.push(name);
+    saveRanking(list);
+    rname.value = '';
+    renderRanking();
+});
+ranking.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    const idx = Number(btn.dataset.index);
+    const act = btn.dataset.action;
+    const list = loadRanking();
+    if(act === 'up' && idx > 0){
+        [list[idx-1], list[idx]] = [list[idx], list[idx-1]];
+        saveRanking(list); renderRanking();
+    } else if(act === 'down' && idx < list.length-1){
+        [list[idx+1], list[idx]] = [list[idx], list[idx+1]];
+        saveRanking(list); renderRanking();
+    } else if(act === 'del'){
+        list.splice(idx,1); saveRanking(list); renderRanking();
+    }
+});
+
+exportBtn.addEventListener('click', ()=>{
+    const list = loadRanking();
+    const blob = new Blob([JSON.stringify(list, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'classement.json'; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(url);
+});
+
+clearBtn.addEventListener('click', ()=>{
+    if(confirm('Effacer tout le classement local ?')) {
+        localStorage.removeItem(STORAGE_KEY);
+        renderRanking();
+    }
+});
+
+/* Initial render */
+renderRanking();
+
+/* Keyboard shortcuts basiques */
+window.addEventListener('keydown', (e)=>{
+    if(e.key === '1') { twoViews = false; panel2.style.display='none'; split.style.display='none'; toggleView.textContent = 'Afficher 1 vue'; }
+    if(e.key === '2') { twoViews = true; panel2.style.display='flex'; responsiveCheck(); toggleView.textContent = 'Afficher 2 vues'; }
+});
+
+/* Small UX: load a default demo if empty */
+if(!localStorage.getItem(STORAGE_KEY)){
+    saveRanking(['Hamilton','Verstappen','Leclerc']);
+    renderRanking();
+}
+
+/* Prevent overly long drag interactions on touch when splitter hidden */
+split.addEventListener('touchstart', ()=>{}, {passive:false});
+</script>
+</body>
+</html>
